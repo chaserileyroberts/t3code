@@ -186,9 +186,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
-  const [expanded, setExpanded] = useState(
-    () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
+  const [expandedOverride, setExpanded] = useState<boolean | undefined>(() =>
+    groupView?.state.expandedEntries.has(workEntry.id) ? true : undefined,
   );
+  const expanded = expandedOverride ?? workEntryViewedImagePath(workEntry) !== null;
   const toggleExpanded = () => {
     const next = !expanded;
     if (groupView) {

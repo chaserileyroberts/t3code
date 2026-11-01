@@ -217,6 +217,69 @@ const TASK_ID = ScheduledTaskId.make("task-1");
 const AUTOMATION_PROMPT = "Triage the inbox\n\nLabel every new issue and close duplicates.";
 
 describe("MessagesTimeline work rows", () => {
+  it.each([false, true])(
+    "opens viewed images outside collapsed work logs, working=%s",
+    async (isWorking) => {
+      setup();
+      audioAsset.url =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+      onTestFinished(() => {
+        audioAsset.url = "";
+      });
+      const runId = RunId.make("image-preview-run");
+      const path = "/workspace/reference.png";
+      const entries = [
+        message("Inspect the screenshot.", { runId }),
+        work("before-image", {
+          runId,
+          label: "Prepare screenshot",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        work("viewed-image", {
+          runId,
+          label: "Viewed reference image",
+          tone: "tool",
+          itemType: "dynamic_tool",
+          toolLifecycleStatus: "completed",
+          viewedImagePath: path,
+        }),
+        work("after-image", {
+          runId,
+          label: "Check results",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: isWorking ? "inProgress" : "completed",
+        }),
+        ...(!isWorking
+          ? [message("The screenshot looks correct.", { role: "assistant", runId }, "answer")]
+          : []),
+      ];
+      await using screen = await renderTimeline(entries, {
+        isWorking,
+        runningRunId: isWorking ? runId : null,
+        latestRun: {
+          runId,
+          status: isWorking ? "running" : "completed",
+          startedAt: CREATED_AT,
+          completedAt: isWorking ? null : CREATED_AT,
+        },
+        workspaceRoot: "/workspace",
+      });
+      await expect.element(screen.getByAltText("reference.png")).toBeVisible();
+      const disclosure = screen.getByRole("button", {
+        name: "Viewed reference image",
+        exact: true,
+      });
+      await expect.element(disclosure).toHaveAttribute("aria-expanded", "true");
+      await disclosure.click();
+      await expect.element(screen.getByAltText("reference.png")).not.toBeInTheDocument();
+      await disclosure.click();
+      await expect.element(screen.getByAltText("reference.png")).toBeVisible();
+    },
+  );
+
   it.each(["delegated", "legacy", "missing"] as const)(
     "uses the reported task for %s completion notifications",
     async (source) => {
