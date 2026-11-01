@@ -49,6 +49,7 @@ import {
 } from "@t3tools/shared/toolActivity";
 import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
 import { appendGeneratedImageEmbeds } from "@t3tools/shared/generatedImageMarkdown";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import type {
   ChatAttachment,
@@ -5011,6 +5012,35 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               if (settled) {
                 yield* releaseSettledTurnIfIdle(payload.turnId);
               }
+              return;
+            }
+
+            if (payload.item.type === "imageView") {
+              const path = payload.item.path.trim();
+              const artifacts = yield* buildDynamicToolArtifacts(context, {
+                type: "dynamicToolCall",
+                id: payload.item.id,
+                tool: "view_image",
+                arguments: { path },
+                status: "completed",
+              });
+              const viewedImagePath =
+                path.length <= 4096 && !/[\r\n]/.test(path) && isWorkspaceImagePreviewPath(path)
+                  ? path
+                  : undefined;
+              yield* emitProviderEvent({
+                type: "node.updated",
+                driver: CODEX_PROVIDER,
+                node: artifacts.node,
+              });
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CODEX_PROVIDER,
+                turnItem: {
+                  ...artifacts.turnItem,
+                  ...(viewedImagePath ? { viewedImagePath } : {}),
+                },
+              });
               return;
             }
 

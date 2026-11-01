@@ -3430,6 +3430,71 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   );
 
   it.effect.each([
+    { path: "C:\\Projects\\PS3Emulator\\target\\race-2.png", started: false },
+    { path: "/tmp/emulator screenshots/race-2.png", started: true },
+  ])("projects completed image views for $path", ({ path, started }) =>
+    Effect.gen(function* () {
+      const scenario = "codex-viewed-images";
+      const base = finalAnswerTranscript(scenario, []);
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario,
+          entries: [
+            ...base.entries.slice(0, -1),
+            ...(started ? ["started", "completed"] : ["completed"]).map((phase) => ({
+              type: "emit_inbound" as const,
+              frame: {
+                method: `item/${phase}`,
+                params: {
+                  threadId: `native-${scenario}-thread`,
+                  turnId: `native-${scenario}-turn`,
+                  item: { type: "imageView", id: "viewed-image", path },
+                },
+              },
+            })),
+            ...base.entries.slice(-1),
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-viewed-images"),
+          text: "Reply with the requested recovery marker.",
+        }),
+      );
+      yield* harness.firstTerminal;
+
+      const items = harness.events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool"
+          ? [event.turnItem]
+          : [],
+      );
+      assert.lengthOf(items, 1);
+      assert.equal(items[0]?.status, "completed");
+      assert.equal(items[0]?.toolName, "view_image");
+      assert.equal(items[0]?.viewedImagePath, path);
+      assert.deepEqual(items[0]?.input, { path });
+      assert.equal(items[0]?.nativeItemRef?.nativeId, "viewed-image");
+      assert.isTrue(
+        harness.events.some(
+          (event) =>
+            event.type === "node.updated" &&
+            event.node.id === items[0]?.nodeId &&
+            event.node.status === "completed",
+        ),
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect.each([
     {
       name: "a text reply gains each saved image once",
       reply: "Done.",
